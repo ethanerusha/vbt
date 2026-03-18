@@ -319,10 +319,25 @@ zw.addEventListener('pointerdown',e=>{
       const px=Math.sqrt(dx*dx+dy*dy);
       const mm=parseFloat($('plateDiam').value)||450;
       scalePxPerM=px/(mm/1000);
-      state='idle';
-      calibBtn.style.display='none';
-      trackBtn.style.display='block';
-      showInstr(`Scale set (${px.toFixed(0)}px = ${mm}mm). Now tap "Set tracking point" and click the center of the bar.`);
+      // Auto-set tracking point to midpoint of the two scale clicks
+      const midX=(scalePts[0].x+scalePts[1].x)/2;
+      const midY=(scalePts[0].y+scalePts[1].y)/2;
+      const isClean=$('liftType').value==='clean';
+      if(isClean){
+        trackPt={x:midX,y:midY};
+        captureTemplate(midX,midY);
+        state='ready';
+        calibBtn.style.display='none';
+        analyzeBtn.style.display='block';
+        corrBtn.style.display='block';
+        drawOverlay();
+        showInstr(`Scale set + bar point auto-placed at plate center. Tap Analyze when ready.`);
+      } else {
+        state='idle';
+        calibBtn.style.display='none';
+        trackBtn.style.display='block';
+        showInstr(`Scale set (${px.toFixed(0)}px = ${mm}mm). Now tap "Set tracking point" and click the center of the bar.`);
+      }
     }
   } else if(state==='tracking'||state==='correct'){
     trackPt={x,y};
@@ -549,15 +564,18 @@ function computeResults(){
   });
 
   // Remove top 2% velocity spikes
-  const sorted=[...sv].sort((a,b)=>a.v-b.v);
+  const sorted=[...analysisVels].sort((a,b)=>a.v-b.v);
   const cap=sorted[Math.floor(sorted.length*0.98)].v;
-  const filtered=sv.filter(v=>v.v<=cap);
+  const filtered=analysisVels.filter(v=>v.v<=cap);
 
   const meanV=filtered.reduce((s,v)=>s+v.v,0)/filtered.length;
   const peakV=Math.max(...filtered.map(v=>v.v));
-  const ys=frames.map(f=>f.y);
+  const usedFrames=isClean
+    ? frames.filter(f=>f.t>=filtered[0].t&&f.t<=filtered[filtered.length-1].t)
+    : frames;
+  const ys=usedFrames.map(f=>f.y);
   const romCm=((Math.max(...ys)-Math.min(...ys))/scalePxPerM*100).toFixed(1);
-  const reps=detectReps(filtered);
+  const reps=isClean?[{mean:meanV,peak:peakV}]:detectReps(filtered);
 
   $('rMv').textContent=meanV.toFixed(2);
   $('rPv').textContent=peakV.toFixed(2);
@@ -565,14 +583,56 @@ function computeResults(){
   $('rReps').textContent=reps.length||'1';
 
   const rl=$('repList');rl.innerHTML='';
-  if(!reps.length)rl.innerHTML=repHTML(1,meanV,peakV);
-  else reps.forEach((r,i)=>rl.innerHTML+=repHTML(i+1,r.mean,r.peak));
+  if(isClean){
+    rl.innerHTML=repHTML('Pull phase',meanV,peakV);
+  } else if(!reps.length){
+    rl.innerHTML=repHTML('Rep 1',meanV,peakV);
+  } else {
+    reps.forEach((r,i)=>rl.innerHTML+=repHTML(`Rep ${i+1}`,r.mean,r.peak));
+  }
 
   $('results').style.display='block';
   pw.style.display='none';
   showInstr('Done! Scroll down for results.');
   resetBtn.style.display='block';
   drawTrack();
+}
+
+function extractCleanPhase1(vels){
+  // Find the first sustained upward movement (vy > 0 = moving up in real world)
+  // Phase 1 ends when:
+  //   (a) bar stops moving upward for 6+ consecutive frames (catch begins), OR
+  //   (b) bar clearly reverses downward after the peak (catch drop-under)
+  const peakV=Math.max(...vels.map(v=>v.v));
+  const movingThresh=peakV*0.08; // 8% of peak = "bar is moving"
+
+  // Find start: first frame where bar is moving upward with real velocity
+  let startIdx=-1;
+  for(let i=0;i<vels.length;i++){
+    if(vels[i].v>movingThresh&&vels[i].vy>0){startIdx=i;break;}
+  }
+  if(startIdx===-1) return vels; // fallback
+
+  // Find end: after peak velocity, find where upward motion collapses
+  // Look for the first point after peak where vy turns negative (catch drop-under)
+  // or speed drops below threshold for 6+ frames
+  let peakIdx=startIdx;
+  for(let i=startIdx;i<vels.length;i++){
+    if(vels[i].v>vels[peakIdx].v) peakIdx=i;
+  }
+
+  let endIdx=vels.length-1;
+  let quietCount=0;
+  for(let i=peakIdx;i<vels.length;i++){
+    // Bar reverses downward = catch happening
+    if(vels[i].vy<-0.05) {endIdx=i; break;}
+    // Bar stops moving
+    if(vels[i].v<movingThresh) quietCount++;
+    else quietCount=0;
+    if(quietCount>=6){endIdx=i-6;break;}
+  }
+
+  return vels.slice(startIdx,Math.max(startIdx+5,endIdx));
 }
 
 function detectReps(vels){
@@ -611,13 +671,13 @@ function drawTrack(){
 }
 
 function zone(v){return v>=0.8?{c:'zg',l:'Fast'}:v>=0.5?{c:'zy',l:'Moderate'}:{c:'zr',l:'Slow'};}
-function repHTML(n,mean,peak){
+function repHTML(label,mean,peak){
   const z=zone(mean);
   const bw=Math.min(100,(mean/1.5)*100).toFixed(0);
   const col=mean>=0.8?'#22c55e':mean>=0.5?'#f59e0b':'#ef4444';
   return`<div class="rep-row">
     <div style="flex:1">
-      <div style="font-weight:600;font-size:14px">Rep ${n}</div>
+      <div style="font-weight:600;font-size:14px">${label}</div>
       <div style="font-size:12px;color:#555;margin-bottom:4px">Peak ${peak.toFixed(2)} m/s</div>
       <div class="vbar" style="width:${bw}%;background:${col}"></div>
     </div>
