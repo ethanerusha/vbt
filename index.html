@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bar Speed Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#f0f0f0;min-height:100vh;padding:16px;max-width:600px;margin:0 auto}
+h1{font-size:20px;font-weight:600;margin-bottom:2px}
+.sub{font-size:13px;color:#666;margin-bottom:18px}
+.card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:16px;margin-bottom:14px}
+.sec{font-size:11px;font-weight:700;letter-spacing:.08em;color:#666;text-transform:uppercase;margin-bottom:10px}
+label{font-size:13px;color:#aaa;display:block;margin-bottom:5px}
+select,input[type=number]{width:100%;background:#111;border:1px solid #333;color:#f0f0f0;border-radius:8px;padding:9px 12px;font-size:14px;margin-bottom:10px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.upload-zone{border:2px dashed #2a2a2a;border-radius:10px;padding:36px 16px;text-align:center;cursor:pointer;transition:border-color .2s}
+.upload-zone:hover{border-color:#4a9eff}
+.upload-zone .ico{font-size:32px;margin-bottom:8px}
+.upload-zone p{font-size:14px;color:#888}
+.upload-zone strong{color:#4a9eff}
+#vc{display:none;margin-bottom:12px}
+/* Zoom viewport */
+#zoom-wrap{position:relative;overflow:hidden;background:#000;border-radius:8px;touch-action:none;cursor:crosshair}
+#mv{display:block;width:100%;pointer-events:none}
+#oc{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+/* Zoom controls */
+.zoom-bar{display:flex;align-items:center;gap:8px;margin-top:6px;margin-bottom:6px}
+.zoom-bar button{background:#2a2a2a;border:1px solid #333;color:#f0f0f0;border-radius:6px;padding:5px 12px;font-size:14px;cursor:pointer}
+.zoom-bar span{font-size:13px;color:#888;min-width:36px;text-align:center}
+/* Scrub bar */
+.scrub-wrap{margin-bottom:10px}
+.scrub-wrap input[type=range]{width:100%;margin:0}
+.scrub-labels{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-top:2px}
+.btn{width:100%;padding:11px;border-radius:8px;border:none;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:8px;transition:opacity .15s}
+.btn:active{opacity:.75}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.bp{background:#4a9eff;color:#fff}
+.bg{background:#22c55e;color:#fff}
+.br{background:#ef4444;color:#fff}
+.bd{background:#2a2a2a;color:#888;border:1px solid #333}
+.instr{font-size:13px;color:#fbbf24;background:#1f1700;border:1px solid #3a2a00;border-radius:8px;padding:10px 12px;margin-bottom:10px;display:none;line-height:1.5}
+.prog-wrap{display:none;margin-bottom:10px}
+.prog-bar{height:5px;background:#222;border-radius:3px;overflow:hidden;margin-bottom:6px}
+.prog-fill{height:100%;background:#4a9eff;border-radius:3px;transition:width .1s}
+.stat-msg{font-size:13px;color:#888}
+.results{display:none}
+.m-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.m-card{background:#111;border-radius:10px;padding:12px;text-align:center}
+.m-val{font-size:26px;font-weight:700;color:#4a9eff}
+.m-unit{font-size:11px;color:#555}
+.m-lbl{font-size:12px;color:#777;margin-top:3px}
+.rep-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #1f1f1f}
+.rep-row:last-child{border:none}
+.vbar{height:5px;border-radius:3px;margin-top:5px}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:700}
+.zg{background:#14532d;color:#4ade80}
+.zy{background:#713f12;color:#fbbf24}
+.zr{background:#7f1d1d;color:#f87171}
+.tip{font-size:12px;color:#555;line-height:1.6;margin-top:4px}
+#corrBtn{display:none}
+</style>
+</head>
+<body>
+<h1>Bar Speed Tracker</h1>
+<p class="sub">Upload a side-on lift video → get velocity data</p>
+
+<div class="card">
+  <p class="sec">Settings</p>
+  <div class="row2">
+    <div>
+      <label>Lift type</label>
+      <select id="liftType">
+        <option value="squat">Squat</option>
+        <option value="deadlift">Deadlift</option>
+        <option value="bench">Bench press</option>
+        <option value="clean">Power clean</option>
+      </select>
+    </div>
+    <div>
+      <label>Plate ⌀ (mm)</label>
+      <input type="number" id="plateDiam" value="450" min="100" max="500">
+    </div>
+  </div>
+  <div style="margin-bottom:10px">
+    <label>Camera / frame rate</label>
+    <select id="fpsMode">
+      <option value="30">Normal — 30fps</option>
+      <option value="60">Normal — 60fps</option>
+      <option value="120slo">Slow motion — 120fps front camera (plays back at 30fps)</option>
+      <option value="240slo">Slow motion — 240fps rear camera (plays back at 30fps)</option>
+    </select>
+  </div>
+  <p class="tip">Standard 45lb / 20kg plates = 450mm. Bumper plates = 450mm. 35lb = 418mm. For slo-mo: iOS records at 120/240fps but plays back at 30fps — select the matching option so velocity is calculated correctly.</p>
+</div>
+
+<div class="card">
+  <p class="sec">Video</p>
+  <div class="upload-zone" id="dz">
+    <div class="ico">🎬</div>
+    <p><strong>Tap to upload</strong> a video</p>
+    <p style="font-size:12px;margin-top:6px">Film side-on · 60fps recommended</p>
+  </div>
+  <input type="file" id="fi" accept="video/*" style="display:none">
+
+  <div id="vc">
+    <!-- Zoom viewport -->
+    <div id="zoom-wrap">
+      <video id="mv" playsinline muted preload="auto"></video>
+      <canvas id="oc"></canvas>
+    </div>
+    <!-- Zoom controls -->
+    <div class="zoom-bar">
+      <button id="zoomOut">−</button>
+      <span id="zoomLabel">1×</span>
+      <button id="zoomIn">+</button>
+      <span style="font-size:12px;color:#555;margin-left:4px">Pinch or +/− to zoom · drag to pan</span>
+    </div>
+    <!-- Frame scrubber -->
+    <div class="scrub-wrap">
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1">
+      <div class="scrub-labels"><span id="scrubTime">0.00s</span><span id="scrubDur">0.00s</span></div>
+    </div>
+  </div>
+
+  <div class="instr" id="instr"></div>
+  <div class="prog-wrap" id="pw">
+    <div class="prog-bar"><div class="prog-fill" id="pf" style="width:0"></div></div>
+    <div class="stat-msg" id="sm">Processing...</div>
+  </div>
+
+  <button class="btn bp" id="calibBtn" style="display:none">1. Set scale — click both plate edges</button>
+  <button class="btn bg" id="trackBtn" style="display:none">2. Set tracking point — click the bar</button>
+  <button class="btn br" id="corrBtn">Correct tracking point</button>
+  <button class="btn bg" id="analyzeBtn" style="display:none">3. Analyze</button>
+  <button class="btn bd" id="resetBtn" style="display:none">Start over</button>
+</div>
+
+<div class="results card" id="results">
+  <p class="sec">Results</p>
+  <div class="m-grid">
+    <div class="m-card"><div class="m-val" id="rMv">—</div><div class="m-unit">m/s</div><div class="m-lbl">Mean velocity</div></div>
+    <div class="m-card"><div class="m-val" id="rPv">—</div><div class="m-unit">m/s</div><div class="m-lbl">Peak velocity</div></div>
+    <div class="m-card"><div class="m-val" id="rRom">—</div><div class="m-unit">cm</div><div class="m-lbl">Range of motion</div></div>
+    <div class="m-card"><div class="m-val" id="rReps">—</div><div class="m-unit">reps</div><div class="m-lbl">Detected</div></div>
+  </div>
+  <p class="sec">Per rep</p>
+  <div id="repList"></div>
+</div>
+
+<canvas id="off" style="display:none"></canvas>
+<canvas id="tmplCanvas" style="display:none"></canvas>
+
+<script>
+const $=id=>document.getElementById(id);
+const dz=$('dz'),fi=$('fi'),mv=$('mv'),oc=$('oc'),off=$('off'),tmplC=$('tmplCanvas');
+const zw=$('zoom-wrap');
+const ictx=oc.getContext('2d');
+const octx=off.getContext('2d',{willReadFrequently:true});
+const tmplCtx=tmplC.getContext('2d',{willReadFrequently:true});
+const calibBtn=$('calibBtn'),trackBtn=$('trackBtn'),corrBtn=$('corrBtn'),analyzeBtn=$('analyzeBtn'),resetBtn=$('resetBtn');
+const instr=$('instr'),pw=$('pw'),pf=$('pf'),sm=$('sm');
+const scrubber=$('scrubber'),scrubTime=$('scrubTime'),scrubDur=$('scrubDur');
+const zoomInBtn=$('zoomIn'),zoomOutBtn=$('zoomOut'),zoomLabel=$('zoomLabel');
+
+let state='idle';
+let scalePts=[];
+let scalePxPerM=null;
+let trackPt=null;
+let frames=[];
+let inited=false;
+let captureToPlaybackRatio=1;
+
+// ---- Zoom / pan state ----
+let zoom=1, panX=0, panY=0;
+let lastPinchDist=0, isPanning=false, panStart={x:0,y:0}, panOrigin={x:0,y:0};
+
+function clampPan(){
+  const vw=zw.clientWidth, vh=zw.clientHeight;
+  const mw=vw*zoom, mh=vh*zoom;
+  panX=Math.min(0,Math.max(panX,vw-mw));
+  panY=Math.min(0,Math.max(panY,vh-mh));
+}
+
+function applyTransform(){
+  mv.style.transform=`translate(${panX}px,${panY}px) scale(${zoom})`;
+  mv.style.transformOrigin='0 0';
+  oc.style.transform=mv.style.transform;
+  oc.style.transformOrigin='0 0';
+  zoomLabel.textContent=zoom.toFixed(1)+'×';
+}
+
+function setZoom(z,cx,cy){
+  const prev=zoom;
+  zoom=Math.max(1,Math.min(6,z));
+  // zoom toward point (cx,cy) in container coords
+  if(cx!==undefined){
+    panX=cx-(cx-panX)*(zoom/prev);
+    panY=cy-(cy-panY)*(zoom/prev);
+  }
+  clampPan();
+  applyTransform();
+}
+
+zoomInBtn.onclick=()=>setZoom(zoom+0.5, zw.clientWidth/2, zw.clientHeight/2);
+zoomOutBtn.onclick=()=>setZoom(zoom-0.5, zw.clientWidth/2, zw.clientHeight/2);
+
+// Touch pinch + pan
+zw.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    lastPinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  } else if(e.touches.length===1&&zoom>1){
+    isPanning=true;
+    panStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    panOrigin={x:panX,y:panY};
+  }
+},{passive:true});
+
+zw.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    const cx=(e.touches[0].clientX+e.touches[1].clientX)/2-zw.getBoundingClientRect().left;
+    const cy=(e.touches[0].clientY+e.touches[1].clientY)/2-zw.getBoundingClientRect().top;
+    setZoom(zoom*(d/lastPinchDist),cx,cy);
+    lastPinchDist=d;
+  } else if(e.touches.length===1&&isPanning){
+    panX=panOrigin.x+(e.touches[0].clientX-panStart.x);
+    panY=panOrigin.y+(e.touches[0].clientY-panStart.y);
+    clampPan();
+    applyTransform();
+  }
+},{passive:false});
+
+zw.addEventListener('touchend',e=>{ if(e.touches.length<2) isPanning=false; },{passive:true});
+
+// Mouse pan
+zw.addEventListener('mousedown',e=>{
+  if(zoom>1&&state!=='calib'&&state!=='tracking'&&state!=='correct'){
+    isPanning=true;
+    panStart={x:e.clientX,y:e.clientY};
+    panOrigin={x:panX,y:panY};
+    zw.style.cursor='grabbing';
+  }
+});
+window.addEventListener('mousemove',e=>{
+  if(!isPanning) return;
+  panX=panOrigin.x+(e.clientX-panStart.x);
+  panY=panOrigin.y+(e.clientY-panStart.y);
+  clampPan();
+  applyTransform();
+});
+window.addEventListener('mouseup',()=>{ isPanning=false; zw.style.cursor='crosshair'; });
+
+// ---- Upload ----
+dz.onclick=()=>fi.click();
+fi.onchange=e=>{ const f=e.target.files[0]; if(f) loadFile(f); };
+
+function loadFile(f){
+  const url=URL.createObjectURL(f);
+  mv.src=url;
+  mv.load();
+  mv.onloadedmetadata=tryInit;
+  mv.onloadeddata=tryInit;
+  mv.muted=true;
+  mv.play().then(()=>mv.pause()).catch(()=>{});
+  setTimeout(()=>{ if(!inited) tryInit(); },3000);
+}
+
+function tryInit(){
+  if(inited) return; inited=true;
+  $('vc').style.display='block';
+  dz.style.display='none';
+  const W=mv.videoWidth||320, H=mv.videoHeight||240;
+  oc.width=W; oc.height=H;
+  off.width=W; off.height=H;
+  // Set zoom-wrap height to match video aspect
+  zw.style.height=(zw.clientWidth*(H/W))+'px';
+  scrubber.max=1000;
+  scrubDur.textContent=mv.duration.toFixed(2)+'s';
+  calibBtn.style.display='block';
+  resetBtn.style.display='block';
+  showInstr('Scrub to a clear frame. Tap "Set scale" then click both edges of a plate.');
+  state='idle';
+}
+
+// ---- Scrubber ----
+scrubber.oninput=()=>{
+  const t=(scrubber.value/1000)*mv.duration;
+  mv.currentTime=t;
+  scrubTime.textContent=t.toFixed(2)+'s';
+};
+mv.onseeked=()=>{ ictx.clearRect(0,0,oc.width,oc.height); drawOverlay(); };
+
+// ---- Canvas click (accounts for zoom/pan) ----
+function getVideoCoords(clientX,clientY){
+  const r=zw.getBoundingClientRect();
+  // Position in the zoomed/panned canvas space
+  const cx=(clientX-r.left-panX)/zoom;
+  const cy=(clientY-r.top-panY)/zoom;
+  // Scale from display to video coords
+  const dispW=zw.clientWidth, dispH=zw.clientHeight;
+  const vx=cx*(oc.width/dispW);
+  const vy=cy*(oc.height/dispH);
+  return{x:vx,y:vy};
+}
+
+oc.style.pointerEvents='none'; // let zoom-wrap handle events
+zw.addEventListener('pointerdown',e=>{
+  if(state!=='calib'&&state!=='tracking'&&state!=='correct') return;
+  e.preventDefault();
+  const{x,y}=getVideoCoords(e.clientX,e.clientY);
+
+  if(state==='calib'){
+    scalePts.push({x,y}); drawOverlay();
+    if(scalePts.length===1) showInstr('Now click the opposite edge of the same plate.');
+    if(scalePts.length===2){
+      const dx=scalePts[1].x-scalePts[0].x, dy=scalePts[1].y-scalePts[0].y;
+      const px=Math.sqrt(dx*dx+dy*dy);
+      const mm=parseFloat($('plateDiam').value)||450;
+      scalePxPerM=px/(mm/1000);
+      state='idle';
+      calibBtn.style.display='none';
+      trackBtn.style.display='block';
+      showInstr(`Scale set (${px.toFixed(0)}px = ${mm}mm). Now tap "Set tracking point" and click the center of the bar.`);
+    }
+  } else if(state==='tracking'||state==='correct'){
+    trackPt={x,y};
+    captureTemplate(x,y);
+    state='ready';
+    drawOverlay();
+    trackBtn.style.display='none';
+    analyzeBtn.style.display='block';
+    corrBtn.style.display='block';
+    showInstr('Point set. Tap Analyze to begin.');
+  }
+});
+
+// ---- Template capture ----
+const TMPL_R=20; // template patch radius
+let template=null; // ImageData of patch around trackPt
+
+function captureTemplate(cx,cy){
+  const W=off.width,H=off.height;
+  octx.drawImage(mv,0,0,W,H);
+  const x=Math.max(0,Math.round(cx)-TMPL_R), y=Math.max(0,Math.round(cy)-TMPL_R);
+  const w=Math.min(TMPL_R*2,W-x), h=Math.min(TMPL_R*2,H-y);
+  tmplC.width=w; tmplC.height=h;
+  tmplCtx.drawImage(off,x,y,w,h,0,0,w,h);
+  template={data:tmplCtx.getImageData(0,0,w,h),cx:cx-x,cy:cy-y,w,h};
+}
+
+// ---- Buttons ----
+calibBtn.onclick=()=>{scalePts=[];state='calib';showInstr('Click one edge of a plate (e.g. left rim).');drawOverlay();};
+trackBtn.onclick=()=>{ if(!scalePxPerM){alert('Set scale first.');return;} state='tracking'; showInstr('Click the center of the bar or collar. Zoom in first for accuracy.'); };
+corrBtn.onclick=()=>{ state='correct'; showInstr('Click to reposition the tracking point.'); };
+analyzeBtn.onclick=()=>{ if(!trackPt||!scalePxPerM){alert('Complete setup first.');return;} startAnalysis(); };
+resetBtn.onclick=()=>{
+  inited=false; mv.src=''; state='idle'; scalePts=[]; scalePxPerM=null; trackPt=null; frames=[]; template=null;
+  zoom=1; panX=0; panY=0; applyTransform();
+  $('vc').style.display='none'; $('results').style.display='none'; dz.style.display='block';
+  [calibBtn,trackBtn,corrBtn,analyzeBtn,resetBtn].forEach(b=>b.style.display='none');
+  pw.style.display='none'; instr.style.display='none'; pf.style.width='0'; fi.value='';
+  ictx.clearRect(0,0,oc.width,oc.height);
+};
+
+function showInstr(msg){instr.style.display='block';instr.textContent=msg;}
+
+function drawOverlay(){
+  ictx.clearRect(0,0,oc.width,oc.height);
+  scalePts.forEach((p,i)=>{
+    ictx.beginPath();ictx.arc(p.x,p.y,7,0,Math.PI*2);
+    ictx.fillStyle=i===0?'#facc15':'#4ade80';ictx.fill();
+    ictx.strokeStyle='#fff';ictx.lineWidth=2;ictx.stroke();
+  });
+  if(scalePts.length===2){
+    ictx.beginPath();ictx.moveTo(scalePts[0].x,scalePts[0].y);ictx.lineTo(scalePts[1].x,scalePts[1].y);
+    ictx.strokeStyle='rgba(255,255,255,0.4)';ictx.lineWidth=1.5;ictx.setLineDash([5,4]);ictx.stroke();ictx.setLineDash([]);
+  }
+  if(trackPt){
+    ictx.beginPath();ictx.arc(trackPt.x,trackPt.y,11,0,Math.PI*2);
+    ictx.strokeStyle='#4a9eff';ictx.lineWidth=3;ictx.stroke();
+    ictx.beginPath();ictx.arc(trackPt.x,trackPt.y,4,0,Math.PI*2);
+    ictx.fillStyle='#4a9eff';ictx.fill();
+  }
+}
+
+// ---- Pixel helpers ----
+function getPx(d,w,x,y){
+  const i=(Math.round(y)*w+Math.round(x))*4;
+  return 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+}
+
+// ---- Lucas-Kanade optical flow ----
+function lkTrack(prev,curr,w,h,px,py,winR){
+  let A=0,B=0,C=0,D=0,E=0;
+  for(let dy=-winR;dy<=winR;dy++){
+    for(let dx=-winR;dx<=winR;dx++){
+      const x=Math.round(px)+dx,y=Math.round(py)+dy;
+      if(x<1||x>=w-1||y<1||y>=h-1)continue;
+      const Ix=(getPx(prev,w,x+1,y)-getPx(prev,w,x-1,y))/2;
+      const Iy=(getPx(prev,w,x,y+1)-getPx(prev,w,x,y-1))/2;
+      const It=getPx(curr,w,x,y)-getPx(prev,w,x,y);
+      A+=Ix*Ix;B+=Ix*Iy;C+=Iy*Iy;D+=Ix*It;E+=Iy*It;
+    }
+  }
+  const det=A*C-B*B;
+  if(Math.abs(det)<1e-3)return{vx:0,vy:0};
+  return{vx:-(C*D-B*E)/det,vy:-(A*E-B*D)/det};
+}
+
+// ---- Template matching (normalized cross-correlation) ----
+function templateMatch(imgData,W,H,cx,cy,searchR){
+  if(!template)return{x:cx,y:cy};
+  const{data:td,w:tw,h:th}=template;
+  // Precompute template mean
+  let tSum=0;
+  for(let j=0;j<th;j++) for(let i=0;i<tw;i++) tSum+=getPx(td,tw,i,j);
+  const tMean=tSum/(tw*th);
+
+  let bestScore=-Infinity,bestX=cx,bestY=cy;
+  const step=2;
+  for(let sy=cy-searchR;sy<=cy+searchR;sy+=step){
+    for(let sx=cx-searchR;sx<=cx+searchR;sx+=step){
+      // compute NCC
+      let num=0,dA=0,dB=0;
+      let valid=true;
+      for(let j=0;j<th;j++){
+        for(let i=0;i<tw;i++){
+          const px=Math.round(sx-template.cx+i), py=Math.round(sy-template.cy+j);
+          if(px<0||px>=W||py<0||py>=H){valid=false;break;}
+          const iv=getPx(imgData,W,px,py);
+          const tv=getPx(td,tw,i,j)-tMean;
+          num+=tv*(iv);
+          dA+=tv*tv;
+          dB+=iv*iv;
+        }
+        if(!valid)break;
+      }
+      if(!valid)continue;
+      const score=dA>0&&dB>0?num/Math.sqrt(dA*dB):-1;
+      if(score>bestScore){bestScore=score;bestX=sx;bestY=sy;}
+    }
+  }
+  return{x:bestX,y:bestY,score:bestScore};
+}
+
+// ---- Analysis ----
+async function startAnalysis(){
+  frames=[];
+  state='analyzing';
+  [calibBtn,trackBtn,corrBtn,analyzeBtn].forEach(b=>b.style.display='none');
+  pw.style.display='block';
+  showInstr('Processing — keep screen on...');
+
+  const W=off.width,H=off.height;
+  const dur=mv.duration;
+  const fpsMode=$('fpsMode').value;
+  let playbackFps;
+  if(fpsMode==='120slo'){playbackFps=30;captureToPlaybackRatio=120/30;}
+  else if(fpsMode==='240slo'){playbackFps=30;captureToPlaybackRatio=240/30;}
+  else{playbackFps=parseInt(fpsMode);captureToPlaybackRatio=1;}
+  const step=1/playbackFps;
+  let cx=trackPt.x,cy=trackPt.y;
+  let prevData=null;
+  let t=0,n=0;
+
+  await seekTo(0);
+  octx.drawImage(mv,0,0,W,H);
+  prevData=octx.getImageData(0,0,W,H);
+  // Re-capture template from frame 0
+  captureTemplate(cx,cy);
+  frames.push({t:0,x:cx,y:cy});
+
+  while(t+step<dur){
+    t+=step;
+    await seekTo(t);
+    octx.drawImage(mv,0,0,W,H);
+    const curr=octx.getImageData(0,0,W,H);
+
+    // Step 1: LK prediction (multi-scale)
+    let vx=0,vy=0;
+    for(const r of [12,6,3]){
+      const res=lkTrack(prevData.data,curr.data,W,H,cx+vx,cy+vy,r);
+      vx+=res.vx;vy+=res.vy;
+    }
+    let px=cx+vx,py=cy+vy;
+
+    // Step 2: Template match to correct drift (search within 30px of LK prediction)
+    const match=templateMatch(curr.data,W,H,px,py,30);
+    // Blend: trust template match if correlation is high, else trust LK
+    const alpha=match.score>0.7?0.8:match.score>0.5?0.4:0.0;
+    px=px*(1-alpha)+match.x*alpha;
+    py=py*(1-alpha)+match.y*alpha;
+
+    // Clamp to plausible motion
+    const maxMove=scalePxPerM*0.8*step;
+    const mag=Math.hypot(px-cx,py-cy);
+    if(mag>maxMove){
+      const ang=Math.atan2(py-cy,px-cx);
+      px=cx+Math.cos(ang)*maxMove;
+      py=cy+Math.sin(ang)*maxMove;
+    }
+
+    cx=Math.max(5,Math.min(W-5,px));
+    cy=Math.max(5,Math.min(H-5,py));
+    frames.push({t,x:cx,y:cy});
+    prevData=curr;
+    n++;
+
+    const pct=(t/dur*100).toFixed(0);
+    pf.style.width=pct+'%';
+    sm.textContent=`Analyzing... ${pct}% (${n} frames)`;
+    if(n%4===0)await tick();
+  }
+
+  computeResults();
+}
+
+function seekTo(t){
+  return new Promise(res=>{
+    mv.currentTime=t;
+    const done=()=>{mv.removeEventListener('seeked',done);res();};
+    mv.addEventListener('seeked',done);
+    setTimeout(done,500);
+  });
+}
+function tick(){return new Promise(r=>setTimeout(r,0));}
+
+function computeResults(){
+  if(frames.length<5){sm.textContent='Too few frames captured.';return;}
+  const mpp=1/scalePxPerM;
+  const vels=[];
+  for(let i=1;i<frames.length;i++){
+    const dt=frames[i].t-frames[i-1].t;
+    if(dt<=0)continue;
+    const dx=(frames[i].x-frames[i-1].x)*mpp;
+    const dy=(frames[i].y-frames[i-1].y)*mpp;
+    // Divide by captureToPlaybackRatio: slo-mo playback is stretched,
+    // so real-world motion happened captureToPlaybackRatio× faster than it appears
+    const realDt=dt*captureToPlaybackRatio;
+    vels.push({t:frames[i].t,v:Math.hypot(dx,dy)/realDt,y:frames[i].y});
+  }
+
+  // Gaussian-ish smoothing window
+  const sv=vels.map((v,i)=>{
+    const win=vels.slice(Math.max(0,i-5),i+6);
+    return{...v,v:win.reduce((s,x)=>s+x.v,0)/win.length};
+  });
+
+  // Remove top 2% velocity spikes
+  const sorted=[...sv].sort((a,b)=>a.v-b.v);
+  const cap=sorted[Math.floor(sorted.length*0.98)].v;
+  const filtered=sv.filter(v=>v.v<=cap);
+
+  const meanV=filtered.reduce((s,v)=>s+v.v,0)/filtered.length;
+  const peakV=Math.max(...filtered.map(v=>v.v));
+  const ys=frames.map(f=>f.y);
+  const romCm=((Math.max(...ys)-Math.min(...ys))/scalePxPerM*100).toFixed(1);
+  const reps=detectReps(filtered);
+
+  $('rMv').textContent=meanV.toFixed(2);
+  $('rPv').textContent=peakV.toFixed(2);
+  $('rRom').textContent=romCm;
+  $('rReps').textContent=reps.length||'1';
+
+  const rl=$('repList');rl.innerHTML='';
+  if(!reps.length)rl.innerHTML=repHTML(1,meanV,peakV);
+  else reps.forEach((r,i)=>rl.innerHTML+=repHTML(i+1,r.mean,r.peak));
+
+  $('results').style.display='block';
+  pw.style.display='none';
+  showInstr('Done! Scroll down for results.');
+  resetBtn.style.display='block';
+  drawTrack();
+}
+
+function detectReps(vels){
+  const peakV=Math.max(...vels.map(v=>v.v));
+  // Threshold = 12% of peak, minimum 0.04 m/s
+  const thresh=Math.max(0.04,peakV*0.12);
+  const reps=[];
+  let inRep=false,rv=[],quietCount=0;
+  for(let i=0;i<vels.length;i++){
+    const v=vels[i].v;
+    if(!inRep&&v>thresh){inRep=true;rv=[];quietCount=0;}
+    if(inRep){
+      rv.push(v);
+      quietCount=v<thresh*0.5?quietCount+1:0;
+      // 10 consecutive quiet frames = end of rep
+      if(quietCount>=10&&rv.length>15){
+        inRep=false;
+        reps.push({mean:rv.reduce((s,x)=>s+x,0)/rv.length,peak:Math.max(...rv)});
+        quietCount=0;
+      }
+    }
+  }
+  if(inRep&&rv.length>15)reps.push({mean:rv.reduce((s,x)=>s+x,0)/rv.length,peak:Math.max(...rv)});
+  return reps;
+}
+
+function drawTrack(){
+  ictx.clearRect(0,0,oc.width,oc.height);
+  if(frames.length<2)return;
+  ictx.beginPath();ictx.moveTo(frames[0].x,frames[0].y);
+  frames.forEach(f=>ictx.lineTo(f.x,f.y));
+  ictx.strokeStyle='rgba(74,158,255,0.7)';ictx.lineWidth=2;ictx.stroke();
+  [[frames[0],'#4ade80'],[frames[frames.length-1],'#f87171']].forEach(([f,c])=>{
+    ictx.beginPath();ictx.arc(f.x,f.y,6,0,Math.PI*2);ictx.fillStyle=c;ictx.fill();
+  });
+}
+
+function zone(v){return v>=0.8?{c:'zg',l:'Fast'}:v>=0.5?{c:'zy',l:'Moderate'}:{c:'zr',l:'Slow'};}
+function repHTML(n,mean,peak){
+  const z=zone(mean);
+  const bw=Math.min(100,(mean/1.5)*100).toFixed(0);
+  const col=mean>=0.8?'#22c55e':mean>=0.5?'#f59e0b':'#ef4444';
+  return`<div class="rep-row">
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px">Rep ${n}</div>
+      <div style="font-size:12px;color:#555;margin-bottom:4px">Peak ${peak.toFixed(2)} m/s</div>
+      <div class="vbar" style="width:${bw}%;background:${col}"></div>
+    </div>
+    <div style="text-align:right;margin-left:12px">
+      <div style="font-size:22px;font-weight:700;color:#4a9eff">${mean.toFixed(2)}</div>
+      <div style="font-size:11px;color:#555">m/s</div>
+      <div class="badge ${z.c}" style="margin-top:4px">${z.l}</div>
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>
